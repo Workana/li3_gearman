@@ -71,21 +71,21 @@ class Gearman extends Adaptable
     public static function execute($configName, $action, array $args, array $env = [], array $workload = [])
     {
         $config = static::getConfig($configName);
-        $filters = $config['filters'];
+        $filters = (array) $config['filters'];
+
+        foreach ($filters as $currentFilter) {
+            Filters::apply(get_called_class(), __FUNCTION__, $currentFilter);
+        }
+
         $params = compact('action', 'args', 'env', 'workload');
-        return static::_filter(
-            __FUNCTION__,
-            $params,
-            function ($self, $params) use ($configName) {
-                return $self::adapter($configName)->execute(
-                    $params['action'],
-                    $params['args'],
-                    $params['env'],
-                    $params['workload']
-                );
-            },
-            $filters
-        );
+        return Filters::run(get_called_class(), __FUNCTION__, $params, function ($params) use ($configName) {
+            return self::adapter($configName)->execute(
+                $params['action'],
+                $params['args'],
+                $params['env'],
+                $params['workload']
+            );
+        });
     }
 
     /**
@@ -97,15 +97,15 @@ class Gearman extends Adaptable
     public static function scheduled($configName)
     {
         $config = static::getConfig($configName);
-        $filters = $config['filters'];
-        return static::_filter(
-            __FUNCTION__,
-            [],
-            function ($self, $params) use ($configName) {
-                return $self::adapter($configName)->scheduled();
-            },
-            $filters
-        );
+        $filters = (array) $config['filters'];
+
+        foreach ($filters as $currentFilter) {
+            Filters::apply(get_called_class(), __FUNCTION__, $currentFilter);
+        }
+
+        return Filters::run(get_called_class(), __FUNCTION__, [], function ($params) use ($configName) {
+            return self::adapter($configName)->scheduled();
+        });
     }
 
     /**
