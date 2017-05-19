@@ -8,6 +8,7 @@
 
 namespace li3_gearman;
 
+use lithium\aop\Filters;
 use lithium\core\Adaptable;
 use lithium\core\ConfigException;
 
@@ -40,20 +41,21 @@ class Gearman extends Adaptable
     public static function run($configName, $action, array $args = [], array $options = [])
     {
         $config = static::getConfig($configName);
-        $filters = $config['filters'];
+        $filters = (array) $config['filters'];
+
+        foreach ($filters as $currentFilter) {
+            Filters::apply(get_called_class(), __FUNCTION__, $currentFilter);
+        }
+
         $params = compact('action', 'args', 'configName');
-        return static::_filter(
-            __FUNCTION__,
-            $params,
-            function ($self, $params) use ($options) {
-                return $self::adapter($params['configName'])->run(
-                    $params['action'],
-                    $params['args'],
-                    ['configName' => $params['configName']] + $options
-                );
-            },
-            $filters
-        );
+
+        return Filters::run(get_called_class(), __FUNCTION__, $params, function ($params) use ($options) {
+            return self::adapter($params['configName'])->run(
+                $params['action'],
+                $params['args'],
+                ['configName' => $params['configName']] + $options
+            );
+        });
     }
 
     /**

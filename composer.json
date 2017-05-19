@@ -1,5 +1,5 @@
 {
-	"name": "mariano/li3_gearman",
+	"name": "cfrutos/li3_gearman",
 	"type": "lithium-library",
 	"description": "Lithium integration with Gearman",
 	"keywords": ["gearman","gearmand","job","queue","lithium"],
