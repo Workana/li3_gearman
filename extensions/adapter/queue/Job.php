@@ -455,7 +455,7 @@ class Job extends Object
                 return;
             }
 
-            $redis = $self->getRedis();
+            $redis = $this->getRedis();
             $key = (!empty($config['prefix']) ? $config['prefix'] : '') . $params['id'];
             $redis->set($key . '.status', $params['status']);
             if (!empty($params['workload'])) {
