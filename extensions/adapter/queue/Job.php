@@ -13,6 +13,7 @@ use DateTime;
 use DateTimeZone;
 use Exception;
 use InvalidArgumentException;
+use lithium\aop\Filters;
 use RuntimeException;
 use lithium\core\ConfigException;
 use lithium\core\Environment;
@@ -227,32 +228,29 @@ class Job extends Object
 
         $now = new DateTime('now', new DateTimeZone('UTC'));
         $params = compact('now');
-        return $this->_filter(
-            __METHOD__,
-            $params,
-            function ($self, $params) {
-                $config = $self->config('redis');
-                $redis = $self->getRedis();
-                $key = (!empty($config['schedulePrefix']) ? $config['schedulePrefix'] : 'job_scheduled');
-                $redis->watch($key);
 
-                $tasks = $redis->zRangeByScore($key, 0, $params['now']->getTimestamp(), ['limit' => [0, 1]]);
-                if (!empty($tasks)) {
-                    foreach ($tasks as $json) {
-                        $redis->multi()->zrem($key, $json);
-                        $result = $redis->exec();
+        return Filters::run(get_called_class(), __FUNCTION__, $params, function($params) {
+            $config = $this->config('redis');
+            $redis = $this->getRedis();
+            $key = (!empty($config['schedulePrefix']) ? $config['schedulePrefix'] : 'job_scheduled');
+            $redis->watch($key);
 
-                        $task = json_decode($json, true);
-                        if (!empty($task) && is_array($task) && $result !== false) {
-                            $self->queue($task['id'], $task['action'], $task['workload'], $task['options']);
-                            return $task['id'];
-                        }
+            $tasks = $redis->zRangeByScore($key, 0, $params['now']->getTimestamp(), ['limit' => [0, 1]]);
+            if (!empty($tasks)) {
+                foreach ($tasks as $json) {
+                    $redis->multi()->zrem($key, $json);
+                    $result = $redis->exec();
+
+                    $task = json_decode($json, true);
+                    if (!empty($task) && is_array($task) && $result !== false) {
+                        $this->queue($task['id'], $task['action'], $task['workload'], $task['options']);
+                        return $task['id'];
                     }
                 }
-
-                $redis->unwatch();
             }
-        );
+
+            $redis->unwatch();
+        });
     }
 
     /**
@@ -278,16 +276,13 @@ class Job extends Object
             'id' => $id,
             'json' => json_encode(compact('id', 'action', 'workload', 'options'))
         ];
-        return $this->_filter(
-            __METHOD__,
-            $params,
-            function ($self, $params) {
-                $config = $self->config('redis');
-                $redis = $self->getRedis();
-                $key = (!empty($config['schedulePrefix']) ? $config['schedulePrefix'] : 'job_scheduled');
-                $redis->zadd($key, $params['when']->getTimestamp(), $params['json']);
-            }
-        );
+
+        Filters::run(get_called_class(), __FUNCTION__, $params, function($params) {
+            $config = $this->config('redis');
+            $redis = $this->getRedis();
+            $key = (!empty($config['schedulePrefix']) ? $config['schedulePrefix'] : 'job_scheduled');
+            $redis->zadd($key, $params['when']->getTimestamp(), $params['json']);
+        });
     }
 
     /**
@@ -415,20 +410,17 @@ class Job extends Object
         }
 
         $params = compact('id');
-        return $this->_filter(
-            __METHOD__,
-            $params,
-            function ($self, $params) {
-                $config = $self->config('redis');
-                if (empty($config['enabled'])) {
-                    return null;
-                }
 
-                $redis = $self->getRedis();
-                $key = (!empty($config['prefix']) ? $config['prefix'] : '') . $params['id'];
-                return $redis->get($key . '.status');
+        return Filters::run(get_called_class(), __FUNCTION__, $params, function($params) {
+            $config = $this->config('redis');
+            if (empty($config['enabled'])) {
+                return null;
             }
-        );
+
+            $redis = $this->getRedis();
+            $key = (!empty($config['prefix']) ? $config['prefix'] : '') . $params['id'];
+            return $redis->get($key . '.status');
+        });
     }
 
     /**
@@ -456,34 +448,31 @@ class Job extends Object
         $isFinished = ($status === static::STATUS_FINISHED);
         $isError = ($status === static::STATUS_ERROR);
         $params = compact('id', 'isError', 'isFinished', 'status', 'workload');
-        return $this->_filter(
-            __METHOD__,
-            $params,
-            function ($self, $params) {
-                $config = $self->config('redis');
-                if (empty($config['enabled']) || empty($config['saveJobStatus'])) {
-                    return;
-                }
 
-                $redis = $self->getRedis();
-                $key = (!empty($config['prefix']) ? $config['prefix'] : '') . $params['id'];
-                $redis->set($key . '.status', $params['status']);
-                if (!empty($params['workload'])) {
-                    $redis->set($key . '.workload', $params['workload']);
-                }
-
-                // If setting as FINISHED, mark an expiration
-                if ($params['isFinished'] && !empty($config['expires'])) {
-                    if (extension_loaded('redis')) {
-                        $redis->expire($key, $config['expires']);
-                    } else {
-                        $redis->keyExpire($key, $config['expires']);
-                    }
-                } elseif ($params['isError']) {
-                    $redis->set($config['prefix'] . '.errors.' . $params['id'], $params['id']);
-                }
+        return Filters::run(get_called_class(), __FUNCTION__, $params, function($params) {
+            $config = $this->config('redis');
+            if (empty($config['enabled']) || empty($config['saveJobStatus'])) {
+                return;
             }
-        );
+
+            $redis = $self->getRedis();
+            $key = (!empty($config['prefix']) ? $config['prefix'] : '') . $params['id'];
+            $redis->set($key . '.status', $params['status']);
+            if (!empty($params['workload'])) {
+                $redis->set($key . '.workload', $params['workload']);
+            }
+
+            // If setting as FINISHED, mark an expiration
+            if ($params['isFinished'] && !empty($config['expires'])) {
+                if (extension_loaded('redis')) {
+                    $redis->expire($key, $config['expires']);
+                } else {
+                    $redis->keyExpire($key, $config['expires']);
+                }
+            } elseif ($params['isError']) {
+                $redis->set($config['prefix'] . '.errors.' . $params['id'], $params['id']);
+            }
+        });
     }
 
     /**
